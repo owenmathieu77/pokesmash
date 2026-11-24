@@ -1,0 +1,16 @@
+# Déploiement automatique sur Render (https://render.com) : "New +" → "Blueprint" → choisir ce dépôt.
+services:
+  - type: web
+    name: pokesmash
+    runtime: node
+    plan: free
+    buildCommand: echo "rien à installer"
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: GH_TOKEN          # jeton GitHub (voir README) — à saisir dans le tableau de bord Render
+        sync: false
+      - key: GH_REPO           # ex. monpseudo/pokesmash-data  (dépôt PRIVÉ qui reçoit la sauvegarde)
+        sync: false
+      - key: GH_BRANCH
+        value: main

@@ -2,6 +2,16 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#0a0c16"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="icon" href="icons/icon-192.png"><link rel="apple-touch-icon" href="icons/icon-192.png">
+<script>
+/* CONFIGURATION : adresse du serveur PokeSmash (comptes, amis, sauvegarde, salons publics).
+   Laisser vide si le jeu est ouvert depuis le serveur lui-même (cas normal sur Render).
+   À remplir seulement si le jeu est hébergé ailleurs (ex. GitHub Pages) : 'https://pokesmash.onrender.com' */
+window.POKESMASH_SERVER = '';
+</script>
+
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>PokeSmash</title>
 <style>
@@ -117,6 +127,8 @@
   .nfocus{outline:3px solid #ffd93b !important;outline-offset:2px;box-shadow:0 0 16px #ffd93b !important}
   .rooms{display:flex;flex-direction:column;gap:8px;width:min(620px,94vw)} .room{display:flex;justify-content:space-between;align-items:center;gap:10px;background:#141838;border:2px solid #3a4090;border-radius:12px;padding:8px 14px}
   #ui.replay{background:transparent;justify-content:flex-start;pointer-events:none} #ui.replay .rbar{pointer-events:auto;display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:center;background:rgba(8,10,28,.82);border:2px solid #4a54b8;border-radius:12px;padding:6px 12px;margin-top:4px}
+  .accline{color:#9aa3d0;font-size:13px;text-align:center} .accerr{color:#ff8a8a;min-height:20px;text-align:center} .accform{min-width:250px;gap:8px}
+  #toast{pointer-events:none} .toastmsg.act{pointer-events:auto;display:flex;gap:10px;align-items:center} .toastmsg .btn{padding:3px 10px;font-size:13px;margin:0}
 </style>
 </head>
 <body>
@@ -588,7 +600,7 @@ function loadSettings() {
   return d;
 }
 let SET = loadSettings();
-function saveSettings() { try { localStorage.setItem('pokebrawl2.settings', JSON.stringify(SET)); } catch (e) { /* ignoré */ } }
+function saveSettings() { SET.settingsTs = Date.now(); try { localStorage.setItem('pokebrawl2.settings', JSON.stringify(SET)); } catch (e) { /* ignoré */ } if (typeof accDirty === 'function') accDirty(); }
 function resetSettings() { SET = JSON.parse(JSON.stringify(DEFAULTS)); saveSettings(); }
 
 // ================================================================ AUDIO
@@ -2585,6 +2597,7 @@ function showMenu() {
   G.scene = 'menu'; netClose();
   show(false,
     h('div', { class:'title' }, 'PokeSmash'),
+    h('div', { class:'accline' }, ACC.token && ACC.user ? '☁️ Connecté : ' + ACC.user + (ACC.ok ? ' — progression synchronisée' : ' — synchronisation en attente') : 'Non connecté — progression enregistrée sur cet appareil'),
     h('div', { class:'sub' }, 'Fan game non officiel de combat de plateforme · 68 familles (164 formes) · 12 grands décors · 18 objets · atelier de fusion'),
     h('div', { class:'col menucol' },
       btn('🏆 Arcade — parcours, boutique, 8 combats', () => showSelect('arcade'), 'big'),
@@ -2596,6 +2609,7 @@ function showMenu() {
       btn('🔑 En ligne — Rejoindre avec un code', () => netJoinFlow(), 'big'),
       btn('🌍 Salons publics', () => showPublicRooms(), 'big'),
       btn('👤 Profil & succès', () => showProfile(), 'big'),
+      btn('☁️ Compte & amis', () => showAccount(), 'big'),
       btn('⚙️ Paramètres', () => showSettings('keys', showMenu), 'big'),
       btn('❔ Commandes & crédits', () => showHelp(), 'big'),
       btn('⛶ Plein écran', toggleFullscreen)),
@@ -2652,7 +2666,7 @@ function makeCustom(hId, bId, tId, name) {
   const row = ['cu' + (CUSTOMS.length + 1), name, H[2], B[3], T[4], H[5], T[6], B[7], T[8]];
   const ch = buildChar(row, CHARS.length); ch.custom = { head:hId, body:bId, tail:tId }; ch.isCustom = true;
   ch.speed = (CHARS[CHAR_BY_ID[bId]].speed + CHARS[CHAR_BY_ID[tId]].speed) / 2; ch.jump = CHARS[CHAR_BY_ID[bId]].jump;
-  CHARS.push(ch); CHAR_BY_ID[ch.id] = ch.idx; CUSTOMS.push({ key, idx:ch.idx, def:{ n:name, h:hId, b:bId, t:tId } });
+  CHARS.push(ch); CHAR_BY_ID[ch.id] = ch.idx; CUSTOMS.push({ key, idx:ch.idx, def:{ n:name, h:hId, b:bId, t:tId } }); if (typeof accDirty === 'function') accDirty();
   return ch.idx;
 }
 const refOf = i => CHARS[i] && CHARS[i].isCustom ? CUSTOMS.find(c => c.idx === i).def : i;
@@ -2820,7 +2834,7 @@ function showSelect(mode) {
   show(false, h('div', { class:'sel' },
     h('div', { class:'sel-head' }, h('div', { class:'title sm' }, titles[m]), code),
     h('div', { class:'sel-slots slots' }, cards),
-    h('div', { class:'sel-opts opts' }, stageSel, (m === 'arcade' || m === 'horde') ? diffSel : stockSel, itemSel, teamSel, ffSel, tourSel, pubSel,
+    h('div', { class:'sel-opts opts' }, stageSel, (m === 'arcade' || m === 'horde') ? diffSel : stockSel, itemSel, teamSel, ffSel, tourSel, pubSel, (m === 'host' ? btn('📨 Inviter un ami', () => showInvitePicker(), 'small') : null),
       btn('⚙️ Réglages', () => showSettings('keys', () => showSelect()), 'small'), btn('🧬 Fusion', () => showFusion(() => showSelect()), 'small')),
     h('div', { class:'sel-search' }, search, h('div', { class:'hint' }, 'Touchez un Pokémon : évolution et chromatique ✨ · 🎲 = hasard')),
     roster,
@@ -3006,7 +3020,7 @@ function showSettings(tab, back) {
     const stat2 = h('div', { class:'hint' }, ''), pre = h('div', { class:'hint' }, '');
     body.appendChild(h('label', { class:'opt' }, 'Pseudo ', nick)); body.appendChild(h('label', { class:'opt' }, 'Serveur ', srv));
     body.appendChild(btn('Tester le serveur', async () => { stat2.textContent = 'Test…'; try { const r = await pubFetch('/api/health'); const j = await r.json(); stat2.textContent = j && j.pokesmash ? '✔ Serveur PokeSmash joignable' : '⚠ Réponse inattendue'; } catch (e) { stat2.textContent = '✖ Injoignable'; } }, 'small')); body.appendChild(stat2);
-    body.appendChild(h('div', { class:'hint' }, 'Le serveur sert à la liste des salons publics. Laissez vide si vous jouez avec des codes de salon uniquement.'));
+    body.appendChild(h('div', { class:'hint' }, 'Le serveur sert aux comptes, à la sauvegarde, aux amis et à la liste des salons publics. Laissez vide si vous jouez avec des codes de salon uniquement.'));
     body.appendChild(btn('⬇️ Précharger des Pokémon pour le hors-ligne', () => { preloadOffline(pre); }, 'small')); body.appendChild(pre);
     if (INSTALL_EVT) body.appendChild(btn('📲 Installer l\'application sur cet appareil', () => { INSTALL_EVT.prompt(); }, 'small'));
   } else {
@@ -3089,7 +3103,7 @@ function loadStats() {
   d.used = d.used || {}; d.achv = d.achv || {}; return d;
 }
 let STATS = loadStats(), statAcc = 0;
-function saveStats() { try { localStorage.setItem(STATS_KEY, JSON.stringify(STATS)); } catch (e) { /* ignoré */ } }
+function saveStats() { try { localStorage.setItem(STATS_KEY, JSON.stringify(STATS)); } catch (e) { /* ignoré */ } accDirty(); }
 const ACHV = [
   { id:'ko1', icon:'💥', name:'Premier K.O.', desc:'Mettre un adversaire K.O.', test:s => s.kos >= 1 },
   { id:'ko50', icon:'🥊', name:'Bagarreur', desc:'50 K.O. au total', test:s => s.kos >= 50 },
@@ -3114,10 +3128,10 @@ const ACHV = [
   { id:'m10', icon:'🎮', name:'Habitué', desc:'Jouer 10 combats', test:s => s.matches >= 10 },
   { id:'h1', icon:'⏱️', name:'Une heure de jeu', desc:'Cumuler 1 h de combat', test:s => s.playMs >= 3600000 },
 ];
-function toast(msg) {
+function toast(msg, label, fn) {
   let el = document.getElementById('toast'); if (!el) { el = h('div', { id:'toast' }); document.body.appendChild(el); }
-  const t = h('div', { class:'toastmsg' }, msg); el.appendChild(t);
-  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 500); }, 3600);
+  const t = h('div', { class:'toastmsg' + (fn ? ' act' : '') }, msg, fn ? h('button', { class:'btn', onclick() { t.remove(); fn(); } }, label || 'OK') : null); el.appendChild(t);
+  setTimeout(() => { t.classList.add('out'); setTimeout(() => t.remove(), 500); }, fn ? 14000 : 3600);
 }
 function checkAchv() {
   for (const a of ACHV) if (!STATS.achv[a.id] && a.test(STATS)) { STATS.achv[a.id] = Date.now(); toast('🏆 Succès débloqué : ' + a.icon + ' ' + a.name); sfx('item'); saveStats(); }
@@ -3308,6 +3322,7 @@ function dailyEnd() {
   const st = dailyStore(), first = win && !st.e.some(x => x.date === D.ds && x.win);
   st.e.push({ date:D.ds, score, win, time:Math.round(G.time) }); st.e = st.e.slice(-60);
   try { localStorage.setItem('pokesmash.daily', JSON.stringify(st)); } catch (e) { /* ignoré */ }
+  accDirty();
   if (first) stat('daily');
   const top = st.e.filter(x => x.win).sort((a, b) => b.score - a.score).slice(0, 5);
   endOverlay(win ? '🏆 Défi réussi !' : 'Défi raté…', (win ? 'Score : ' + score + ' · ' : '') + 'Règle : ' + D.rule.text + (top.length ? ' · Meilleurs : ' + top.map(x => x.score).join(', ') : ''), btn('Réessayer', () => startDaily(D), 'big'), btn('Menu principal', showMenu));
@@ -3585,7 +3600,7 @@ function drawWind() {
 // ================================================================ REPLAYS (ralenti, caméra libre)
 const REP = { buf:[], clips:[], pend:[], acc:0, on:false, free:false, cam:{ x:0, y:0, z:.8 }, speed:.5, paused:false, t:0, clip:null, ui:null, cls:'', save:null };
 function repReset() { REP.buf = []; REP.clips = []; REP.pend = []; REP.acc = 0; }
-function repMark(kind, f) { if (G.net === 'guest') return; REP.pend.push({ kind, who:f.ch.name, at:G.time, wait:kind === 'ko' ? 1.3 : 3.4, back:kind === 'ko' ? 4.2 : 2.2 }); }
+function repMark(kind, f) { if (G.net === 'guest' || !f || !f.ch) return; REP.pend.push({ kind, who:f.ch.name, at:G.time, wait:kind === 'ko' ? 1.3 : 3.4, back:kind === 'ko' ? 4.2 : 2.2 }); }
 function repRecord(dt) {
   if (G.net === 'guest' || G.scene !== 'fight' || G.paused || G.hitstop > 0) { return; }
   REP.acc += dt;
@@ -3705,7 +3720,7 @@ function uiPadTick(dt) {
 
 // ================================================================ SALONS PUBLICS (serveur) ET RÉSEAU
 const PS = { server:null, hb:null, probed:false };
-function serverBase() { const s = (SET.net && SET.net.server || '').trim().replace(/\/+$/, ''); return s || PS.server; }
+function serverBase() { const w = (typeof window.POKESMASH_SERVER === 'string' && window.POKESMASH_SERVER) ? window.POKESMASH_SERVER.replace(/\/+$/, '') : ''; const s = (SET.net && SET.net.server || '').trim().replace(/\/+$/, ''); return s || w || PS.server; }
 async function probeServer() {
   PS.probed = true; if (location.protocol.indexOf('http') !== 0) return;
   try { const r = await fetch('/api/health', { cache:'no-store' }); if (r.ok) { const j = await r.json(); if (j && j.pokesmash) PS.server = ''; } } catch (e) { /* pas de serveur : ok */ }
@@ -3744,6 +3759,163 @@ async function preloadOffline(statusEl) {
 probeServer();
 
 addEventListener('pointerdown', () => ensureAudio(), { passive:true });
+
+// ================================================================ COMPTE, SAUVEGARDE SYNCHRONISÉE, AMIS ET INVITATIONS
+const ACC = { user:null, token:null, ok:false, last:0, dirty:false, timer:null, busy:false, err:'', reqSeen:0, loop:null };
+try { const s = JSON.parse(localStorage.getItem('pokesmash.acc') || 'null'); if (s && s.token) { ACC.user = s.user; ACC.token = s.token; } } catch (e) { /* ignoré */ }
+const accSave = () => { try { localStorage.setItem('pokesmash.acc', JSON.stringify({ user:ACC.user, token:ACC.token })); } catch (e) { /* ignoré */ } };
+const accBase = () => { const s = (typeof window.POKESMASH_SERVER === 'string' && window.POKESMASH_SERVER) ? window.POKESMASH_SERVER.replace(/\/+$/, '') : serverBase(); return s; };
+async function accFetch(method, path, body, keepalive) {
+  const b = accBase(); if (b === null || b === undefined) throw new Error('Aucun serveur configuré.');
+  const r = await fetch(b + path, { method, mode:'cors', keepalive:!!keepalive, headers:Object.assign({ 'Content-Type':'application/json' }, ACC.token ? { Authorization:'Bearer ' + ACC.token } : {}), body:body ? JSON.stringify(body) : undefined });
+  let j = {}; try { j = await r.json(); } catch (e) { /* vide */ }
+  if (r.status === 401 && ACC.token && path !== '/api/login') { accLogoutLocal(); throw new Error('Session expirée : reconnectez-vous.'); }
+  if (!r.ok) throw new Error(j.error || ('Erreur ' + r.status));
+  return j;
+}
+
+// ---------------------------------------------------------------- fichier de sauvegarde (progression)
+function saveBundle() {
+  return { v:1, ts:Date.now(), stats:STATS, daily:dailyStore(), settingsTs:SET.settingsTs || 0,
+    settings:{ keys:SET.keys, pad:SET.pad, touch:SET.touch, audio:SET.audio, game:SET.game }, fusions:CUSTOMS.slice(0, 12).map(c => c.def) };
+}
+function mergeBundle(r) {
+  if (!r || typeof r !== 'object') return;
+  const rs = r.stats || {};
+  for (const k of Object.keys(rs)) {
+    if (k === 'used') for (const id of Object.keys(rs.used || {})) STATS.used[id] = Math.max(STATS.used[id] || 0, rs.used[id] || 0);
+    else if (k === 'achv') for (const id of Object.keys(rs.achv || {})) STATS.achv[id] = Math.min(STATS.achv[id] || Infinity, rs.achv[id]);
+    else if (typeof rs[k] === 'number') STATS[k] = Math.max(STATS[k] || 0, rs[k]);
+  }
+  if (r.daily && Array.isArray(r.daily.e)) {
+    const st = dailyStore(), seen = new Set(st.e.map(x => x.date + '|' + x.score + '|' + x.time));
+    for (const x of r.daily.e) if (!seen.has(x.date + '|' + x.score + '|' + x.time)) st.e.push(x);
+    st.e = st.e.sort((a, b) => (a.date > b.date ? 1 : -1)).slice(-60); try { localStorage.setItem('pokesmash.daily', JSON.stringify(st)); } catch (e) { /* ignoré */ }
+  }
+  if (r.settings && (r.settingsTs || 0) > (SET.settingsTs || 0)) { const keep = SET.net; mergeInto(SET, r.settings); SET.net = keep; SET.settingsTs = r.settingsTs; try { localStorage.setItem('pokebrawl2.settings', JSON.stringify(SET)); } catch (e) { /* ignoré */ } }
+  if (Array.isArray(r.fusions)) for (const d of r.fusions) { try { if (CHAR_BY_ID[d.h] !== undefined && CHAR_BY_ID[d.b] !== undefined && CHAR_BY_ID[d.t] !== undefined) makeCustom(d.h, d.b, d.t, d.n); } catch (e) { /* ignoré */ } }
+  try { localStorage.setItem(STATS_KEY, JSON.stringify(STATS)); } catch (e) { /* ignoré */ }
+  checkAchv();
+}
+function accDirty() {
+  if (!ACC.token) return; ACC.dirty = true;
+  if (ACC.timer) return; ACC.timer = setTimeout(() => { ACC.timer = null; accPush(); }, 6000);
+}
+async function accPush(keepalive) {
+  if (!ACC.token || !ACC.dirty || ACC.busy) return; ACC.busy = true; ACC.dirty = false;
+  try { await accFetch('PUT', '/api/save', { save:saveBundle() }, keepalive); ACC.ok = true; ACC.last = Date.now(); ACC.err = ''; }
+  catch (e) { ACC.ok = false; ACC.err = e.message; ACC.dirty = true; }
+  ACC.busy = false;
+}
+document.addEventListener('visibilitychange', () => { if (document.hidden && ACC.token && ACC.dirty) { if (ACC.timer) { clearTimeout(ACC.timer); ACC.timer = null; } accPush(true); } });
+addEventListener('pagehide', () => { if (ACC.token && ACC.dirty) accPush(true); });
+
+// ---------------------------------------------------------------- connexion / création / déconnexion
+function accLogoutLocal() { ACC.user = null; ACC.token = null; ACC.ok = false; if (ACC.loop) { clearInterval(ACC.loop); ACC.loop = null; } try { localStorage.removeItem('pokesmash.acc'); } catch (e) { /* ignoré */ } }
+async function accAuth(kind, user, pass) {
+  const j = await accFetch('POST', kind === 'register' ? '/api/register' : '/api/login', { user, pass });
+  ACC.user = j.user; ACC.token = j.token; accSave();
+  mergeBundle(j.save); ACC.dirty = true; ACC.ok = true; ACC.last = Date.now(); await accPush();
+  accStartLoop(); toast('☁️ Connecté : ' + ACC.user + ' — progression synchronisée');
+}
+async function accRestore() {
+  if (!ACC.token) return;
+  try { const j = await accFetch('GET', '/api/me'); ACC.user = j.user; mergeBundle(j.save); ACC.ok = true; ACC.last = Date.now(); ACC.dirty = true; accPush(); accStartLoop(); } catch (e) { ACC.err = e.message; }
+}
+function accStartLoop() {
+  if (ACC.loop) clearInterval(ACC.loop);
+  const tick = async () => {
+    if (!ACC.token) return;
+    try {
+      const hosting = NET.role === 'host' && NET.code, playing = G.scene === 'fight' || G.scene === 'over';
+      await accFetch('POST', '/api/presence', { state:hosting ? (playing ? 'playing' : 'lobby') : (G.net === 'guest' ? 'playing' : 'menu'), code:hosting ? NET.code : null });
+      const box = await accFetch('GET', '/api/inbox');
+      for (const inv of box.invites) toast('📨 ' + inv.from + ' vous invite à jouer !', 'Rejoindre', () => { if (G.scene === 'fight') return; netJoinFlow(inv.code); });
+      if (box.reqIn > ACC.reqSeen) toast('🤝 Nouvelle demande d\'ami', 'Voir', () => showFriends());
+      ACC.reqSeen = box.reqIn;
+    } catch (e) { /* hors-ligne : on réessaiera */ }
+  };
+  tick(); ACC.loop = setInterval(tick, 15000);
+}
+setTimeout(() => { if (ACC.token) { const wait = () => (accBase() === null || accBase() === undefined) && !PS.probed ? setTimeout(wait, 300) : accRestore(); wait(); } }, 600);
+
+// ---------------------------------------------------------------- sauvegarde locale (fichier .json)
+function exportSave() {
+  const blob = new Blob([JSON.stringify(saveBundle(), null, 1)], { type:'application/json' }), a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = 'pokesmash-sauvegarde-' + todayStr() + '.json'; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
+}
+function importSave() {
+  const inp = h('input', { type:'file', accept:'.json,application/json' }); inp.style.display = 'none'; document.body.appendChild(inp);
+  inp.onchange = () => { const f = inp.files[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { try { const j = JSON.parse(rd.result); if (!j.stats) throw new Error('fichier invalide'); if (j.settingsTs !== undefined) j.settingsTs = 0; mergeBundle(j); saveStats(); accDirty(); toast('💾 Sauvegarde importée (fusionnée avec la progression actuelle)'); showAccount(); } catch (e) { alert('Fichier de sauvegarde invalide.'); } inp.remove(); }; rd.readAsText(f); };
+  inp.click();
+}
+
+// ---------------------------------------------------------------- écrans
+function showAccount(msg) {
+  const base = accBase(), noServer = base === null || base === undefined, rows = [];
+  const err = h('div', { class:'accerr' }, msg || '');
+  const field = (ph, type) => { const i = h('input', { type:type || 'text', class:'search', placeholder:ph, autocomplete:type === 'password' ? 'current-password' : 'username', maxlength:'64' }); return i; };
+  rows.push(h('div', { class:'title sm' }, '☁️ Compte & sauvegarde'));
+  if (ACC.token && ACC.user) {
+    const st = ACC.ok ? '✔ Synchronisé' + (ACC.last ? ' à ' + new Date(ACC.last).toLocaleTimeString() : '') : '⚠ ' + (ACC.err || 'Hors-ligne : sera synchronisé dès que possible');
+    rows.push(h('div', { class:'panel txt' }, h('p', null, h('b', null, 'Connecté : ' + ACC.user)), h('p', null, st), h('p', { class:'hint' }, 'Votre progression (statistiques, succès, défis du jour, réglages, fusions) est envoyée automatiquement au serveur, qui la sauvegarde sur GitHub.')));
+    rows.push(h('div', { class:'row' }, btn('☁️ Synchroniser maintenant', async () => { ACC.dirty = true; await accPush(); showAccount(); }, 'small'), btn('👥 Amis', () => showFriends(), 'big go'), btn('Déconnexion', async () => { try { await accFetch('POST', '/api/logout'); } catch (e) { /* ignoré */ } accLogoutLocal(); showAccount(); }, 'small')));
+  } else if (noServer) {
+    rows.push(h('div', { class:'panel txt' }, h('p', null, 'Les comptes nécessitent le serveur du jeu (voir le tutoriel d\'hébergement).'), h('p', null, 'Entrez son adresse dans Paramètres → Réseau, ou ouvrez le jeu depuis l\'adresse de votre serveur.')));
+    rows.push(h('div', { class:'row' }, btn('⚙️ Réseau', () => showSettings('net', () => showAccount()), 'big go')));
+  } else {
+    const lu = field('Pseudo'), lp = field('Mot de passe', 'password'), ru = field('Pseudo (3 à 16 caractères)'), rp = field('Mot de passe (6 caractères min.)', 'password'), rp2 = field('Confirmer le mot de passe', 'password');
+    const go = async (kind) => {
+      try {
+        err.textContent = 'Connexion…';
+        if (kind === 'register') { if (rp.value !== rp2.value) throw new Error('Les mots de passe ne correspondent pas.'); await accAuth('register', ru.value.trim(), rp.value); }
+        else await accAuth('login', lu.value.trim(), lp.value);
+        showAccount();
+      } catch (e) { err.textContent = e.message; }
+    };
+    rows.push(h('div', { class:'row' },
+      h('div', { class:'panel set accform' }, h('b', null, 'Se connecter'), lu, lp, btn('Connexion', () => go('login'), 'big go')),
+      h('div', { class:'panel set accform' }, h('b', null, 'Créer un compte'), ru, rp, rp2, btn('Créer mon compte', () => go('register'), 'big'))));
+    rows.push(err);
+  }
+  rows.push(h('div', { class:'panel txt' }, h('b', null, '💾 Fichier de sauvegarde'), h('div', { class:'hint' }, 'Téléchargez votre progression dans un fichier .json (utile sans compte), ou importez-la sur un autre appareil.'),
+    h('div', { class:'row' }, btn('💾 Exporter', exportSave, 'small'), btn('📂 Importer', importSave, 'small'))));
+  rows.push(btn('← Menu', showMenu, 'big'));
+  show(false, ...rows);
+}
+let frTimer = null;
+function frStop() { if (frTimer) { clearInterval(frTimer); frTimer = null; } }
+async function showFriends(msg) {
+  frStop();
+  if (!ACC.token) { showAccount('Connectez-vous pour gérer vos amis.'); return; }
+  let d = null; try { d = await accFetch('GET', '/api/friends'); } catch (e) { showAccount(e.message); return; }
+  const input = h('input', { type:'text', class:'search', placeholder:'Pseudo d\'un joueur à ajouter', maxlength:'16' });
+  const act = async (fn, okMsg) => { try { await fn(); showFriends(okMsg); } catch (e) { showFriends('⚠ ' + e.message); } };
+  const stateTxt = f => !f.online ? '⚫ hors-ligne' : f.state === 'lobby' ? '🟢 dans un salon' : f.state === 'playing' ? '🎮 en combat' : '🟢 en ligne';
+  const hosting = NET.role === 'host' && NET.code;
+  const flist = d.friends.length ? d.friends.map(f => h('div', { class:'room' }, h('div', null, h('b', null, f.name), h('div', { class:'hint' }, stateTxt(f))),
+    h('div', { class:'row' }, f.code ? btn('Rejoindre', () => netJoinFlow(f.code), 'small go') : null,
+      hosting && f.online ? btn('📨 Inviter', () => act(() => accFetch('POST', '/api/invite', { to:f.name, code:NET.code }), 'Invitation envoyée à ' + f.name), 'small') : null,
+      btn('Retirer', () => { if (confirm('Retirer ' + f.name + ' de vos amis ?')) act(() => accFetch('DELETE', '/api/friends/' + encodeURIComponent(f.name)), f.name + ' retiré'); }, 'small')))) : [h('div', { class:'hint' }, 'Aucun ami pour l\'instant : ajoutez-en avec leur pseudo.')];
+  show(false, h('div', { class:'title sm' }, '👥 Amis — ' + ACC.user), msg ? h('div', { class:'sub' }, msg) : null,
+    h('div', { class:'row' }, input, btn('➕ Ajouter', () => { const v = input.value.trim(); if (v) act(() => accFetch('POST', '/api/friends/request', { to:v }), 'Demande envoyée à ' + v); }, 'small go')),
+    d.reqIn.length ? h('div', { class:'panel txt' }, h('b', null, '🤝 Demandes reçues'), d.reqIn.map(n => h('div', { class:'room' }, h('span', null, n), h('div', { class:'row' }, btn('Accepter', () => act(() => accFetch('POST', '/api/friends/accept', { from:n }), n + ' est maintenant votre ami'), 'small go'), btn('Refuser', () => act(() => accFetch('POST', '/api/friends/decline', { from:n }), 'Demande refusée'), 'small'))))) : null,
+    d.reqOut.length ? h('div', { class:'hint' }, 'Demandes envoyées en attente : ' + d.reqOut.join(', ')) : null,
+    h('div', { class:'rooms' }, flist),
+    h('div', { class:'row' }, btn('← Compte', () => { frStop(); showAccount(); }, 'big'), btn('↻', () => showFriends(), 'small')));
+  frTimer = setInterval(() => { if (!document.querySelector('.rooms')) { frStop(); return; } if (document.activeElement !== input) showFriends(msg); }, 12000);
+}
+function showInvitePicker() {
+  if (!ACC.token) { toast('Connectez-vous pour inviter vos amis (menu → Compte & amis).'); return; }
+  accFetch('GET', '/api/friends').then(d => {
+    const online = d.friends.filter(f => f.online), modal = h('div', { class:'modal' });
+    modal.appendChild(h('div', { class:'mbox' }, h('div', { class:'title sm' }, '📨 Inviter un ami'), h('div', { class:'sub' }, 'Code du salon : ' + NET.code),
+      online.length ? h('div', { class:'rooms' }, online.map(f => h('div', { class:'room' }, h('span', null, f.name + ' · ' + (f.state === 'lobby' ? 'dans un salon' : f.state === 'playing' ? 'en combat' : 'en ligne')),
+        btn('Inviter', () => accFetch('POST', '/api/invite', { to:f.name, code:NET.code }).then(() => toast('📨 Invitation envoyée à ' + f.name)).catch(e => toast('⚠ ' + e.message)), 'small go')))) : h('div', { class:'hint' }, 'Aucun ami en ligne pour le moment. Partagez le code ci-dessus.'),
+      btn('Fermer', () => modal.remove(), 'big')));
+    ui.appendChild(modal);
+  }).catch(e => toast('⚠ ' + e.message));
+}
 // ================================================================ EN LIGNE : hôte + jusqu'à 7 invités (PeerJS / WebRTC, topologie en étoile)
 const MAXP = 8, HZK = ['beam', 'flame', 'wave', 'vine', 'bolt', 'ring', 'vortex'];
 const NET = {
@@ -3800,7 +3972,7 @@ async function netHostFlow() {
       if (slot < 0) slot = S.slots.findIndex((s, i) => i > 0 && s.kind === 'cpu');            // une CPU cède sa place
       if (busy || slot < 0) { try { conn.send({ t:'full', busy }); } catch (e) { /* ignoré */ } setTimeout(() => { try { conn.close(); } catch (e) { /* ignoré */ } }, 400); return; }
       entry.slot = slot; NET.conns.push(entry);
-      S.slots[slot] = { kind:'remote', char:-1, shiny:false, lvl:5 };
+      S.slots[slot] = { kind:'remote', char:-1, shiny:false, lvl:5, team:slot % 2 };
       lobbySend(); if (G.scene === 'menu') showSelect();
     });
     conn.on('data', m => hostOnData(entry, parseMsg(m)));
@@ -4034,7 +4206,7 @@ function frame(now) {
 }
 requestAnimationFrame(frame);
 showMenu();
-window.__pb = { G, SET, REP, MUS, startReplay, envTick, navMove, showPublicRooms, PS, applyStatus, evoInfo, evolveFighter, isFoe, startUlt, chargeBar, launch, chargeBar, launch, startUlt, hitBall, ultOf, ultTypeOf, TYPE_OF, ULT_BY_TYPE, updateHazards, onlineCount, lobbySend, hostConnClosed, MAXP, applyQuality, THEMES, fpsAvg: () => fpsAvg, qual: () => QUAL, makeCustom, evoMenu, showFusion, randomForm, BASE_FORMS, FAMILIES, FAM_OF, CHAR_BY_ID, CUSTOMS, refOf, idxOf, loadSprites, ITEMS, ITEM_KEYS, cam, saveSettings, showSettings, buildTouch, spawnItem, pickupItem, padInfo, keys, hintText, CHARS, STAGES, NET, launchMatch, setupMatch, stepGame, showMenu, showSelect, startArcade, aiInput, sendSnap, applySnap, drawFight, makeFighter, blank, arcadeRoute, showProfile, showDaily, STATS, packInput, unpackInput, readInput, keys, pressed, onMatchEnd };
+window.__pb = { G, SET, saveStats, ACC, accAuth, showAccount, showFriends, saveBundle, mergeBundle, REP, MUS, startReplay, envTick, navMove, showPublicRooms, PS, applyStatus, evoInfo, evolveFighter, isFoe, startUlt, chargeBar, launch, chargeBar, launch, startUlt, hitBall, ultOf, ultTypeOf, TYPE_OF, ULT_BY_TYPE, updateHazards, onlineCount, lobbySend, hostConnClosed, MAXP, applyQuality, THEMES, fpsAvg: () => fpsAvg, qual: () => QUAL, makeCustom, evoMenu, showFusion, randomForm, BASE_FORMS, FAMILIES, FAM_OF, CHAR_BY_ID, CUSTOMS, refOf, idxOf, loadSprites, ITEMS, ITEM_KEYS, cam, saveSettings, showSettings, buildTouch, spawnItem, pickupItem, padInfo, keys, hintText, CHARS, STAGES, NET, launchMatch, setupMatch, stepGame, showMenu, showSelect, startArcade, aiInput, sendSnap, applySnap, drawFight, makeFighter, blank, arcadeRoute, showProfile, showDaily, STATS, packInput, unpackInput, readInput, keys, pressed, onMatchEnd };
 
 })();
 </script>

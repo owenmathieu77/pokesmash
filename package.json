@@ -1,0 +1,10 @@
+{
+  "name": "pokesmash",
+  "version": "1.0.0",
+  "description": "PokeSmash : jeu de combat de plateforme (fan game) avec comptes, amis, sauvegarde synchronisée sur GitHub et salons en ligne.",
+  "main": "server.js",
+  "scripts": { "start": "node server.js", "test": "node test/server.test.js" },
+  "engines": { "node": ">=18" },
+  "license": "UNLICENSED",
+  "private": true
+}
