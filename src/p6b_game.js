@@ -32,7 +32,7 @@ async function launchMatch(cfg) {
     for (const c of NET.conns) c.ready = false;
     const kinds = cfg.fighters.map(f => f.kind === 'cpu' ? 'c' : 'r'), lv = cfg.fighters.map(f => f.lvl || 5);
     for (const c of NET.conns) {
-      NET.sendTo(c, { t:'start', tm:cfg.teams ? cfg.fighters.map(f => f.team || 0) : null, ff:!!cfg.ff, you:cfg.fighters.findIndex(f => f.slot === c.slot), chars:cfg.fighters.map(f => refOf(f.char)), sh:cfg.fighters.map(f => !!f.shiny), kinds, lv, stage:si, stocks:cfg.stocks });
+      NET.sendTo(c, { t:'start', hz:cfg.horde ? 1 : 0, df:cfg.diff || 'normal', hd:cfg.fighters.map(f => f.hidden ? 1 : 0), tm:cfg.teams ? cfg.fighters.map(f => f.team || 0) : null, ff:!!cfg.ff, you:cfg.fighters.findIndex(f => f.slot === c.slot), chars:cfg.fighters.map(f => refOf(f.char)), sh:cfg.fighters.map(f => !!f.shiny), kinds, lv, stage:si, stocks:cfg.stocks });
     }
     show(false, h('div', { class:'title sm' }, 'En attente des joueurs…'), h('div', { class:'sub' }, NET.conns.length + ' invité(s) connecté(s)'));
     await new Promise(res => { const t0 = Date.now(), iv = setInterval(() => { if (NET.conns.every(c => c.ready) || Date.now() - t0 > 20000) { clearInterval(iv); res(); } }, 50); });

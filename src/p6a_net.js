@@ -33,7 +33,7 @@ const onlineCount = () => NET.conns.length + 1;
 function lobbySend() {
   if (NET.role !== 'host' || !S) return;
   const sl = S.slots.map(s => ({ k:s.kind === 'human' ? 'remote' : s.kind, c:s.char < 0 ? -1 : refOf(s.char), s:!!s.shiny, l:s.lvl || 5, tm:s.team || 0 }));
-  for (const c of NET.conns) NET.sendTo(c, { t:'lobby', you:c.slot, sl, stage:S.stage, stocks:S.stocks, tms:!!S.teams, ff:!!S.ff });
+  for (const c of NET.conns) NET.sendTo(c, { t:'lobby', you:c.slot, sl, stage:S.stage, stocks:S.stocks, tms:!!S.teams, ff:!!S.ff, hz:!!S.horde, df:S.diff });
 }
 async function netHostFlow() {
   show(false, h('div', { class:'title sm' }, 'Création du salon…'));
@@ -111,7 +111,7 @@ function guestOnData(m) {
   if (m.t === 'lobby') {
     if (!S || S.mode !== 'guest') S = newSelect('guest');
     const mine = S.slots[m.you], keep = mine && mine.kind === 'human' && mine.char >= 0 ? { char:mine.char, shiny:mine.shiny } : null;
-    S.you = m.you; S.stage = m.stage; S.stocks = m.stocks; S.active = m.you; S.teams = !!m.tms; S.ff = !!m.ff;
+    S.you = m.you; S.stage = m.stage; S.stocks = m.stocks; S.active = m.you; S.teams = !!m.tms; S.ff = !!m.ff; S.horde = !!m.hz; S.diff = m.df || 'normal';
     S.slots = m.sl.map((o, i) => {
       const ch = (typeof o.c === 'number' && o.c < 0) ? -1 : idxOf(o.c);
       if (i === m.you) return { kind:'human', char:keep ? keep.char : ch, shiny:keep ? keep.shiny : !!o.s, lvl:5, team:o.tm || 0 };
@@ -125,6 +125,9 @@ function guestOnData(m) {
   else if (m.t === 'end') {
     G.scene = 'over';
     const w = G.fighters[m.w]; G.winTeam = m.wt === undefined ? -1 : m.wt; endOverlay(winnerTitle(w), 'En attente de l\'hôte pour la revanche…', btn('Quitter', showMenu));
+  } else if (m.t === 'hend') {
+    G.scene = 'over'; const rec = m.wave > (STATS.hordeBest || 0); STATS.hordeBest = Math.max(STATS.hordeBest || 0, m.wave); checkAchv(); saveStats();
+    endOverlay('☠️ Fin de la Survie', 'Vague atteinte : ' + m.wave + ' · Score : ' + m.score + ' · K.O. : ' + m.kills + (rec ? ' — NOUVEAU RECORD !' : '') + ' · En attente de l\'hôte pour rejouer…', btn('Quitter', showMenu));
   } else if (m.t === 'bracket') showBracketRO(m.d);
   else if (m.t === 'lobbyback') { G.scene = 'menu'; showSelect(); }
   else if (m.t === 'pong') G.ping = Math.round(performance.now() - m.ts);
@@ -133,8 +136,8 @@ async function guestStart(m) {
   show(false, h('div', { class:'title sm' }, 'Chargement des sprites…')); G.scene = 'loading';
   const ci = m.chars.map(idxOf), sh = m.sh || [];
   const sps = await loadSpritesFast(ci.map((c, i) => ({ ch:CHARS[c], shiny:!!sh[i] })), 7000);
-  const fighters = ci.map((c, i) => ({ team:m.tm ? m.tm[i] : 0, char:c, shiny:!!sh[i], kind:i === m.you ? 'human' : (m.kinds[i] === 'c' ? 'cpu' : 'remote'), lvl:(m.lv && m.lv[i]) || 5, slot:i }));
-  setupMatch({ fighters, stocks:m.stocks, mode:'guest', teams:!!m.tm, ff:!!m.ff }, m.stage, sps);
+  const fighters = ci.map((c, i) => ({ team:m.tm ? m.tm[i] : 0, char:c, shiny:!!sh[i], kind:i === m.you ? 'human' : (m.kinds[i] === 'c' ? 'cpu' : 'remote'), lvl:(m.lv && m.lv[i]) || 5, slot:i, hidden:!!(m.hd && m.hd[i]) }));
+  setupMatch({ fighters, stocks:m.stocks, mode:'guest', teams:!!m.tm, ff:!!m.ff, horde:!!m.hz, diff:m.df }, m.stage, sps);
   G.net = 'guest'; G.me = m.you; NET.send({ t:'ready' });
 }
 
@@ -148,7 +151,7 @@ function makeSnap() {
     i:G.items.map(it => [Math.round(it.x), Math.round(it.y), ITEM_KEYS.indexOf(it.type), r(it.life, 1)]),
     z:G.hazards.map(h => [HZK.indexOf(h.kind), Math.round(h.x), Math.round(h.y), Math.round(h.w), Math.round(h.h), h.ring ? Math.round(h.r0 + (h.r1 - h.r0) * Math.min(1, h.t / h.life)) : 0, r(h.t, 2), r(h.life, 2), r(Math.max(0, h.delay), 2), h.color, h.face || 1, r(h.age, 2)]),
     b:G.ball ? [Math.round(G.ball.x), Math.round(G.ball.y), G.ball.hp, r(G.ball.flash, 2)] : 0,
-    v:[G.env.lavaY === null ? null : Math.round(G.env.lavaY), G.env.wind || 0], e:[], tm:r(G.time, 2), cd:r(G.cd, 2) };
+    v:[G.env.lavaY === null ? null : Math.round(G.env.lavaY), G.env.wind || 0], hd:G.horde ? [G.horde.wave, G.horde.score, G.horde.kills, G.horde.state === 'prep' ? 1 : 0, Math.ceil(G.horde.t)] : 0, e:[], tm:r(G.time, 2), cd:r(G.cd, 2) };
 }
 function sendSnap() {
   const snap = makeSnap(); snap.e = netEvents; netEvents = [];
@@ -170,9 +173,10 @@ function applySnap(m) {
   G.ball = m.b ? { x:m.b[0], y:m.b[1], hp:m.b[2], hpMax:5, flash:m.b[3] } : null;
   G.items = (m.i || []).map(a => ({ x:a[0], y:a[1], type:ITEM_KEYS[a[2]] || 'heal', life:a[3], landed:true }));
   for (const e of m.e) {
-    if (e[0] === 'sp') fxSparks(e[1], e[2], e[3], e[4], e[5]); else if (e[0] === 'sf') sfx(e[1]); else if (e[0] === 'sk') G.shake = Math.max(G.shake, e[1]); else if (e[0] === 'tx') fxText(e[1], e[2], e[3], e[4]); else if (e[0] === 'dk') G.darkT = e[1]; else if (e[0] === 'bn') G.banner = { t:2.6, text:e[1], sub:e[2] || '' }; else if (e[0] === 'ev') { const f = G.fighters[e[1]]; if (f) { const old = f.ch.name; swapChar(f, e[2]); if (e[3] !== 0 && f.ch.name !== old) { G.hitstop = 0; G.evo = { t:.85, max:.85, idx:e[1], from:old, to:f.ch.name }; sfx('evo'); } } } else if (e[0] === 'ci') { G.cine = { t:.9, max:.9, name:e[1], color:e[2], idx:e[3], who:e[4] }; sfx('ult'); }
+    if (e[0] === 'sp') fxSparks(e[1], e[2], e[3], e[4], e[5]); else if (e[0] === 'sf') sfx(e[1]); else if (e[0] === 'sk') G.shake = Math.max(G.shake, e[1]); else if (e[0] === 'tx') fxText(e[1], e[2], e[3], e[4]); else if (e[0] === 'dk') G.darkT = e[1]; else if (e[0] === 'wv') { const f = G.fighters[e[1]]; if (f) { if (e[4]) { f.hidden = true; f.stocks = 0; f.state = 'dead'; } else { f.shiny = !!e[3]; f.hidden = false; f.team = 1; f.giant = e[5] ? 1e9 : 0; swapChar(f, idxOf(e[2])); } } } else if (e[0] === 'bn') G.banner = { t:2.6, text:e[1], sub:e[2] || '' }; else if (e[0] === 'ev') { const f = G.fighters[e[1]]; if (f) { const old = f.ch.name; swapChar(f, e[2]); if (e[3] !== 0 && f.ch.name !== old) { G.hitstop = 0; G.evo = { t:.85, max:.85, idx:e[1], from:old, to:f.ch.name }; sfx('evo'); } } } else if (e[0] === 'ci') { G.cine = { t:.9, max:.9, name:e[1], color:e[2], idx:e[3], who:e[4] }; sfx('ult'); }
   }
   if (m.v) { G.env.lavaY = m.v[0]; G.env.wind = m.v[1]; }
+  if (m.hd && G.horde) Object.assign(G.horde, { wave:m.hd[0], score:m.hd[1], kills:m.hd[2], state:m.hd[3] ? 'prep' : 'fight', t:m.hd[4] });
   G.time = m.tm;
   if (G.cd > 0 && m.cd <= 0) G.go = .7;
   G.cd = m.cd;

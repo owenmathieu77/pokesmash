@@ -91,29 +91,34 @@ function updateHorde() {
 function spawnWave() {
   const H = G.horde, w = ++H.wave, boss = w % 10 === 0;
   const base = H.diff === 'easy' ? 1 : H.diff === 'hard' ? 4 : 2, lvl = clampN(Math.round(base + w * .55 + (boss ? 1 : 0)), 1, 9);
-  const count = boss ? (w >= 20 ? 3 : 1) : Math.min(4, 1 + Math.floor((w - 1) / 2.5));
-  const enemies = G.fighters.filter(f => f.team === 1);
-  for (let j = 0; j < 4; j++) {
+  const enemies = G.fighters.filter(f => f.team === 1), H0 = G.fighters.filter(f => f.team === 0 && !f.hidden).length;
+  const count = Math.min(enemies.length, (boss ? (w >= 20 ? 3 : 1) : Math.min(4, 1 + Math.floor((w - 1) / 2.5))) + Math.floor((H0 - 1) / 2));
+  for (let j = 0; j < enemies.length; j++) {
     const old = enemies[j], idx = old.idx;
-    if (j >= count) { old.hidden = true; old.stocks = 0; old.state = 'dead'; old.dead = 1e9; continue; }
+    if (j >= count) { old.hidden = true; old.stocks = 0; old.state = 'dead'; old.dead = 1e9; if (G.net === 'host') netEvents.push(['wv', idx, 0, 0, 1, 0]); continue; }
     const isBoss = boss && j === 0;
     const ci = isBoss ? CHAR_BY_ID[HORDE_BOSSES[Math.floor(Math.random() * HORDE_BOSSES.length)]] : randomForm();
     const shiny = Math.random() < .06; void loadSprites(CHARS[ci], shiny);
     const sx = (j % 2 ? 1 : -1) * (360 + j * 50);
-    const nf = makeFighter(idx, CHARS[ci], 'cpu', isBoss ? 9 : lvl, spriteObj[CHARS[ci].id + (shiny ? '*' : '')], sx, G.stage.rY, isBoss ? 3 : 1);
-    nf.team = 1; nf.shiny = shiny; nf.state = 'spawn'; nf.inv = 1.6; nf.dmgM = isBoss ? 1.25 : Math.min(1.4, 1 + w * .012);
+    const nf = makeFighter(idx, CHARS[ci], 'cpu', isBoss ? 9 : lvl, spriteObj[CHARS[ci].id + (shiny ? '*' : '')], sx, G.stage.rY, isBoss ? 3 + (H0 > 2 ? 1 : 0) : 1);
+    nf.team = 1; nf.shiny = shiny; nf.state = 'spawn'; nf.inv = 1.6; nf.dmgM = (isBoss ? 1.25 : Math.min(1.4, 1 + w * .012)) + .05 * (H0 - 1);
     if (isBoss) { nf.giant = 1e9; nf.maxStocks = 3; }
     G.fighters[idx] = nf;
+    if (G.net === 'host') netEvents.push(['wv', idx, refOf(ci), shiny ? 1 : 0, 0, isBoss ? 1 : 0]);
   }
   H.state = 'fight';
   G.banner = { t:2.6, text:boss ? '⚠️ BOSS — VAGUE ' + w : 'VAGUE ' + w, sub:boss ? 'Un adversaire légendaire approche…' : count + ' ennemi' + (count > 1 ? 's' : '') + ' · niveau ' + lvl };
+  if (G.net === 'host') netEvents.push(['bn', G.banner.text, G.banner.sub]);
   sfx(boss ? 'ult' : 'item');
 }
 function waveClear() {
   const H = G.horde; H.score += 250 * H.wave;
   for (const f of G.fighters) if (f.team === 0 && f.stocks > 0) { f.pct = Math.max(0, f.pct - 35); chargeBar(f, 25); f.status = null; }
   if (H.wave % 5 === 0) G.items.push({ x:0, y:G.stage.bounds.t + 200, vy:0, type:'heart', life:25, landed:false, plat:null });
-  G.banner = { t:2.6, text:'VAGUE ' + H.wave + ' TERMINÉE !', sub:'+' + (250 * H.wave) + ' points · soin de 35 %' }; sfx('item');
+  const revived = [];
+  for (const f of G.fighters) if (f.team === 0 && !f.hidden && f.stocks <= 0) { f.stocks = 1; f.dead = .5; f.pct = 0; f.state = 'dead'; f.ult = 0; revived.push(f.ch.name); }
+  G.banner = { t:2.6, text:'VAGUE ' + H.wave + ' TERMINÉE !', sub:'+' + (250 * H.wave) + ' points · soin de 35 %' + (revived.length ? ' · 🔄 ' + revived.join(', ') + ' revient' : '') }; sfx('item');
+  if (G.net === 'host') netEvents.push(['bn', G.banner.text, G.banner.sub]);
 }
 function hordeKo(f) {
   const H = G.horde;
@@ -123,8 +128,10 @@ function hordeKo(f) {
 function hordeEnd() {
   const H = G.horde, best = Math.max(STATS.hordeBest || 0, H.wave), record = H.wave > (STATS.hordeBest || 0);
   STATS.hordeBest = best; checkAchv(); saveStats();
+  const online = G.cfg.mode === 'host';
+  if (online) NET.broadcast({ t:'hend', wave:H.wave, score:H.score, kills:H.kills });
   endOverlay('☠️ Fin de la Survie', 'Vague atteinte : ' + H.wave + ' · Score : ' + H.score + ' · K.O. : ' + H.kills + (record ? ' — NOUVEAU RECORD !' : ' · Record : vague ' + best),
-    btn('Rejouer', () => launchMatch(G.cfg), 'big'), btn('Menu principal', showMenu));
+    btn('Rejouer', () => launchMatch(G.cfg), 'big'), ...(online ? [btn('Retour au salon', () => { NET.broadcast({ t:'lobbyback' }); lobbySend(); showSelect(); })] : []), btn('Menu principal', showMenu));
 }
 
 // ================================================================ ARCADE ENRICHIE : parcours, pièces, boutique

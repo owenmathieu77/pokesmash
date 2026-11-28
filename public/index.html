@@ -2601,7 +2601,8 @@ function showMenu() {
     h('div', { class:'sub' }, 'Fan game non officiel de combat de plateforme · 68 familles (164 formes) · 12 grands décors · 18 objets · atelier de fusion'),
     h('div', { class:'col menucol' },
       btn('🏆 Arcade — parcours, boutique, 8 combats', () => showSelect('arcade'), 'big'),
-      btn('🧟 Survie — vagues infinies', () => showSelect('horde'), 'big'),
+      btn('🧟 Survie solo / à deux (local)', () => showSelect('horde'), 'big'),
+      btn('🧟 Survie en ligne (coopération)', () => { window.__presetHorde = true; netHostFlow(); }, 'big'),
       btn('🥇 Tournoi (4, 8 ou 16)', () => showSelect('tour'), 'big'),
       btn('📅 Défi du jour', () => showDaily(), 'big'),
       btn('🎮 Versus local (2 à 4 joueurs, équipes)', () => showSelect('versus'), 'big'),
@@ -2752,7 +2753,7 @@ function newSelect(mode) {
   else if (mode === 'versus') base.slots = [{ kind:'human', char:PK, shiny:false, team:0 }, { kind:'cpu', lvl:SET.game.cpu, char:CHAR_BY_ID['0006'], shiny:false, team:1 }, { kind:'off', lvl:SET.game.cpu, char:CHAR_BY_ID['0448'], shiny:false, team:0 }, { kind:'off', lvl:SET.game.cpu, char:CHAR_BY_ID['0094'], shiny:false, team:1 }];
   else if (mode === 'horde') base.slots = [{ kind:'human', char:PK, shiny:false, team:0 }, { kind:'off', char:CHAR_BY_ID['0448'], shiny:false, team:0 }];
   else if (mode === 'tour') { base.slots = [{ kind:'human', char:PK, shiny:false, team:0 }, { kind:'cpu', lvl:SET.game.cpu, char:CHAR_BY_ID['0006'], shiny:false, team:0 }, { kind:'off', lvl:SET.game.cpu, char:CHAR_BY_ID['0448'], shiny:false, team:0 }, { kind:'off', lvl:SET.game.cpu, char:CHAR_BY_ID['0094'], shiny:false, team:0 }]; base.tsize = 8; base.stocks = 2; }
-  else if (mode === 'host') { base.slots = [{ kind:'human', char:PK, shiny:false }]; for (let i = 1; i < 8; i++) base.slots.push({ kind:'off', char:randomForm(), shiny:false, lvl:SET.game.cpu, team:i % 2 }); }
+  else if (mode === 'host') { base.horde = !!window.__presetHorde; window.__presetHorde = false; base.slots = [{ kind:'human', char:PK, shiny:false }]; for (let i = 1; i < 8; i++) base.slots.push({ kind:'off', char:randomForm(), shiny:false, lvl:SET.game.cpu, team:i % 2 }); }
   else { base.slots = []; for (let i = 0; i < 8; i++) base.slots.push({ kind:'off', char:-1, shiny:false, lvl:5 }); base.you = -1; }
   if (mode === 'guest') base.active = 0;
   return base;
@@ -2762,7 +2763,7 @@ function editable(i) { if (S.mode === 'guest') return i === S.you; return S.slot
 function showSelect(mode) {
   if (mode) { S = newSelect(mode); G.scene = 'menu'; }
   const m = S.mode;
-  const titles = { horde:'Survie — vagues infinies (1 ou 2 joueurs en coopération)', tour:'Tournoi — choisissez les participants', arcade:'Arcade — choisissez votre combattant', versus:'Versus local', host:'En ligne — vous êtes l\'hôte (P1)', guest:'En ligne — vous êtes l\'invité (P2)' };
+  const titles = { horde:'Survie — solo ou à deux en local (pour jouer en ligne : Héberger un salon)', tour:'Tournoi — choisissez les participants', arcade:'Arcade — choisissez votre combattant', versus:'Versus local', host:'En ligne — vous êtes l\'hôte (P1)', guest:'En ligne — vous êtes l\'invité (P2)' };
   const roster = h('div', { class:'grid' });
   const norm = t => String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const fillGrid = () => {
@@ -2812,21 +2813,22 @@ function showSelect(mode) {
   const stockSel = h('select', { onchange() { S.stocks = parseInt(this.value, 10); if (S.mode === 'host') lobbySend(); } },
     ...[1, 2, 3, 4, 5].map(n => h('option', Object.assign({ value:n }, S.stocks === n ? { selected:'selected' } : {}), 'Vies : ' + n)));
   if (m === 'guest' || m === 'arcade') stockSel.setAttribute('disabled', 'disabled');
-  const diffSel = (m === 'arcade' || m === 'horde') ? h('select', { onchange() { S.diff = this.value; } },
+  const diffSel = (m === 'arcade' || m === 'horde' || (m === 'host' && S.horde)) ? h('select', { onchange() { S.diff = this.value; if (m === 'host') lobbySend(); } },
     ...[['easy', 'Facile'], ['normal', 'Normal'], ['hard', 'Difficile']].map(([v, n]) => h('option', Object.assign({ value:v }, S.diff === v ? { selected:'selected' } : {}), 'Difficulté : ' + n))) : null;
 
   const itemSel = h('select', { onchange() { SET.game.items = this.value; saveSettings(); } },
     ...[['off', 'Aucun'], ['rare', 'Rares'], ['normal', 'Normaux'], ['frequent', 'Fréquents']].map(([v, n]) => h('option', Object.assign({ value:v }, SET.game.items === v ? { selected:'selected' } : {}), 'Objets : ' + n)));
   if (m === 'guest') itemSel.setAttribute('disabled', 'disabled');
-  const teamSel = (m === 'versus' || m === 'host') ? h('select', { onchange() { S.teams = this.value === '1'; if (m === 'host') lobbySend(); showSelect(); } },
-    h('option', Object.assign({ value:'0' }, !S.teams ? { selected:'selected' } : {}), 'Mode : chacun pour soi'), h('option', Object.assign({ value:'1' }, S.teams ? { selected:'selected' } : {}), 'Mode : équipes (A contre B)')) : null;
+  const teamSel = (m === 'versus' || m === 'host') ? h('select', { onchange() { const v = this.value; S.teams = v === '1'; S.horde = m === 'host' && v === '2'; if (S.horde) S.tour = 0; if (m === 'host') lobbySend(); showSelect(); } },
+    h('option', Object.assign({ value:'0' }, !S.teams && !S.horde ? { selected:'selected' } : {}), 'Mode : chacun pour soi'), h('option', Object.assign({ value:'1' }, S.teams ? { selected:'selected' } : {}), 'Mode : équipes (A contre B)'),
+    ...(m === 'host' ? [h('option', Object.assign({ value:'2' }, S.horde ? { selected:'selected' } : {}), 'Mode : 🧟 Survie coopérative (vagues)')] : [])) : null;
   const ffSel = S.teams && (m === 'versus' || m === 'host') ? h('select', { onchange() { S.ff = this.value === '1'; if (m === 'host') lobbySend(); } },
     h('option', Object.assign({ value:'0' }, !S.ff ? { selected:'selected' } : {}), 'Tirs amis : non'), h('option', Object.assign({ value:'1' }, S.ff ? { selected:'selected' } : {}), 'Tirs amis : oui')) : null;
   const tourSel = m === 'tour' ? h('select', { onchange() { S.tsize = parseInt(this.value, 10); } }, ...[4, 8, 16].map(n => h('option', Object.assign({ value:String(n) }, S.tsize === n ? { selected:'selected' } : {}), 'Tournoi à ' + n))) :
-    m === 'host' ? h('select', { onchange() { S.tour = parseInt(this.value, 10); lobbySend(); showSelect(); } }, ...[0, 4, 8, 16].map(n => h('option', Object.assign({ value:String(n) }, (S.tour || 0) === n ? { selected:'selected' } : {}), n ? 'Tournoi à ' + n : 'Combat normal'))) : null;
+    (m === 'host' && !S.horde) ? h('select', { onchange() { S.tour = parseInt(this.value, 10); lobbySend(); showSelect(); } }, ...[0, 4, 8, 16].map(n => h('option', Object.assign({ value:String(n) }, (S.tour || 0) === n ? { selected:'selected' } : {}), n ? 'Tournoi à ' + n : 'Combat normal'))) : null;
   const pubSel = m === 'host' ? h('select', { onchange() { S.pub = this.value === '1'; if (S.pub) pubStart(); else pubStop(); } }, h('option', Object.assign({ value:'0' }, !S.pub ? { selected:'selected' } : {}), 'Salon privé (par code)'), h('option', Object.assign({ value:'1' }, S.pub ? { selected:'selected' } : {}), 'Salon public (liste)')) : null;
   let startLabel = 'Combattre !', startFn = startFromSelect;
-  if (m === 'host') { const act = S.slots.filter(x => x.kind !== 'off').length; startLabel = act >= 2 ? 'Lancer (' + act + ' combattants)' : 'En attente de joueurs…'; }
+  if (m === 'host') { const act = S.slots.filter(x => x.kind !== 'off').length; startLabel = S.horde ? (act >= 1 ? 'Lancer la Survie (' + act + ' joueur' + (act > 1 ? 's' : '') + ')' : 'En attente de joueurs…') : (act >= 2 ? 'Lancer (' + act + ' combattants)' : 'En attente de joueurs…'); }
   if (m === 'guest') { startLabel = 'En attente de l\'hôte…'; startFn = () => {}; }
   const code = (m === 'host' && NET.code) ? h('div', { class:'code' }, 'Code du salon (' + onlineCount() + '/8 joueurs) : ', h('b', null, NET.code), ' ', h('button', { class:'btn small', onclick() { try { navigator.clipboard.writeText(NET.code); } catch (e) { /* presse-papiers indisponible */ } } }, 'Copier')) : null;
 
@@ -2834,7 +2836,7 @@ function showSelect(mode) {
   show(false, h('div', { class:'sel' },
     h('div', { class:'sel-head' }, h('div', { class:'title sm' }, titles[m]), code),
     h('div', { class:'sel-slots slots' }, cards),
-    h('div', { class:'sel-opts opts' }, stageSel, (m === 'arcade' || m === 'horde') ? diffSel : stockSel, itemSel, teamSel, ffSel, tourSel, pubSel, (m === 'host' ? btn('📨 Inviter un ami', () => showInvitePicker(), 'small') : null),
+    h('div', { class:'sel-opts opts' }, stageSel, (m === 'arcade' || m === 'horde' || (m === 'host' && S.horde)) ? diffSel : stockSel, itemSel, teamSel, ffSel, tourSel, pubSel, (m === 'host' ? btn('📨 Inviter un ami', () => showInvitePicker(), 'small') : null),
       btn('⚙️ Réglages', () => showSettings('keys', () => showSelect()), 'small'), btn('🧬 Fusion', () => showFusion(() => showSelect()), 'small')),
     h('div', { class:'sel-search' }, search, h('div', { class:'hint' }, 'Touchez un Pokémon : évolution et chromatique ✨ · 🎲 = hasard')),
     roster,
@@ -2871,6 +2873,14 @@ function startFromSelect() {
     launchMatch({ fighters:fs, stage:S.stage, stocks:S.stocks, mode:'versus', teams:S.teams, ff:S.ff });
     return;
   }
+  if (m === 'host' && S.horde) {
+    const fs = [];
+    S.slots.forEach((sl, i) => { if (sl.kind === 'off' || sl.kind === 'cpu') return; fs.push({ char:sl.char >= 0 ? sl.char : rc(), shiny:!!sl.shiny, team:0, kind:i === 0 ? 'human' : 'remote', lvl:5, slot:i, conn:(NET.conns.find(c => c.slot === i) || {}).conn ? NET.conns.find(c => c.slot === i) : null }); });
+    if (!fs.length) return;
+    const E = Math.max(2, Math.min(4 + (fs.length > 2 ? 1 : 0), 8 - fs.length));
+    for (let j = 0; j < E; j++) fs.push({ char:CHAR_BY_ID['0025'], kind:'cpu', lvl:3, slot:9, team:1, hidden:true });
+    launchMatch({ fighters:fs, stage:S.stage, stocks:3, mode:'host', horde:true, teams:true, ff:false, diff:S.diff }); return;
+  }
   if (m === 'host' && S.tour) {
     const parts = []; S.slots.forEach((sl, i) => { if (sl.kind !== 'off') { const cn = NET.conns.find(c => c.slot === i); parts.push({ name:i === 0 ? 'Hôte' : sl.kind === 'remote' ? 'Joueur ' + (i + 1) : 'CPU', kind:i === 0 ? 'human' : (sl.kind === 'remote' ? 'remote' : 'cpu'), slot:i, char:sl.char >= 0 ? sl.char : rc(), shiny:!!sl.shiny, lvl:sl.lvl || 5, conn:cn || null }); } });
     tourStart(parts, S.tour, S.stage, S.stocks, true); return;
@@ -2895,7 +2905,7 @@ function onMatchEnd() {
   statMatchEnd();
   if (cfg.tour) { tourMatchDone(); return; }
   if (cfg.mode === 'daily') { dailyEnd(); return; }
-  if (cfg.mode === 'horde') { hordeEnd(); return; }
+  if (cfg.horde) { hordeEnd(); return; }
   if (cfg.mode === 'versus') {
     endOverlay(winnerTitle(w), null, btn('Revanche', () => launchMatch(cfg), 'big'), btn('Choix des combattants', () => showSelect()), btn('Menu principal', showMenu));
   } else if (cfg.mode === 'host') {
@@ -3188,29 +3198,34 @@ function updateHorde() {
 function spawnWave() {
   const H = G.horde, w = ++H.wave, boss = w % 10 === 0;
   const base = H.diff === 'easy' ? 1 : H.diff === 'hard' ? 4 : 2, lvl = clampN(Math.round(base + w * .55 + (boss ? 1 : 0)), 1, 9);
-  const count = boss ? (w >= 20 ? 3 : 1) : Math.min(4, 1 + Math.floor((w - 1) / 2.5));
-  const enemies = G.fighters.filter(f => f.team === 1);
-  for (let j = 0; j < 4; j++) {
+  const enemies = G.fighters.filter(f => f.team === 1), H0 = G.fighters.filter(f => f.team === 0 && !f.hidden).length;
+  const count = Math.min(enemies.length, (boss ? (w >= 20 ? 3 : 1) : Math.min(4, 1 + Math.floor((w - 1) / 2.5))) + Math.floor((H0 - 1) / 2));
+  for (let j = 0; j < enemies.length; j++) {
     const old = enemies[j], idx = old.idx;
-    if (j >= count) { old.hidden = true; old.stocks = 0; old.state = 'dead'; old.dead = 1e9; continue; }
+    if (j >= count) { old.hidden = true; old.stocks = 0; old.state = 'dead'; old.dead = 1e9; if (G.net === 'host') netEvents.push(['wv', idx, 0, 0, 1, 0]); continue; }
     const isBoss = boss && j === 0;
     const ci = isBoss ? CHAR_BY_ID[HORDE_BOSSES[Math.floor(Math.random() * HORDE_BOSSES.length)]] : randomForm();
     const shiny = Math.random() < .06; void loadSprites(CHARS[ci], shiny);
     const sx = (j % 2 ? 1 : -1) * (360 + j * 50);
-    const nf = makeFighter(idx, CHARS[ci], 'cpu', isBoss ? 9 : lvl, spriteObj[CHARS[ci].id + (shiny ? '*' : '')], sx, G.stage.rY, isBoss ? 3 : 1);
-    nf.team = 1; nf.shiny = shiny; nf.state = 'spawn'; nf.inv = 1.6; nf.dmgM = isBoss ? 1.25 : Math.min(1.4, 1 + w * .012);
+    const nf = makeFighter(idx, CHARS[ci], 'cpu', isBoss ? 9 : lvl, spriteObj[CHARS[ci].id + (shiny ? '*' : '')], sx, G.stage.rY, isBoss ? 3 + (H0 > 2 ? 1 : 0) : 1);
+    nf.team = 1; nf.shiny = shiny; nf.state = 'spawn'; nf.inv = 1.6; nf.dmgM = (isBoss ? 1.25 : Math.min(1.4, 1 + w * .012)) + .05 * (H0 - 1);
     if (isBoss) { nf.giant = 1e9; nf.maxStocks = 3; }
     G.fighters[idx] = nf;
+    if (G.net === 'host') netEvents.push(['wv', idx, refOf(ci), shiny ? 1 : 0, 0, isBoss ? 1 : 0]);
   }
   H.state = 'fight';
   G.banner = { t:2.6, text:boss ? '⚠️ BOSS — VAGUE ' + w : 'VAGUE ' + w, sub:boss ? 'Un adversaire légendaire approche…' : count + ' ennemi' + (count > 1 ? 's' : '') + ' · niveau ' + lvl };
+  if (G.net === 'host') netEvents.push(['bn', G.banner.text, G.banner.sub]);
   sfx(boss ? 'ult' : 'item');
 }
 function waveClear() {
   const H = G.horde; H.score += 250 * H.wave;
   for (const f of G.fighters) if (f.team === 0 && f.stocks > 0) { f.pct = Math.max(0, f.pct - 35); chargeBar(f, 25); f.status = null; }
   if (H.wave % 5 === 0) G.items.push({ x:0, y:G.stage.bounds.t + 200, vy:0, type:'heart', life:25, landed:false, plat:null });
-  G.banner = { t:2.6, text:'VAGUE ' + H.wave + ' TERMINÉE !', sub:'+' + (250 * H.wave) + ' points · soin de 35 %' }; sfx('item');
+  const revived = [];
+  for (const f of G.fighters) if (f.team === 0 && !f.hidden && f.stocks <= 0) { f.stocks = 1; f.dead = .5; f.pct = 0; f.state = 'dead'; f.ult = 0; revived.push(f.ch.name); }
+  G.banner = { t:2.6, text:'VAGUE ' + H.wave + ' TERMINÉE !', sub:'+' + (250 * H.wave) + ' points · soin de 35 %' + (revived.length ? ' · 🔄 ' + revived.join(', ') + ' revient' : '') }; sfx('item');
+  if (G.net === 'host') netEvents.push(['bn', G.banner.text, G.banner.sub]);
 }
 function hordeKo(f) {
   const H = G.horde;
@@ -3220,8 +3235,10 @@ function hordeKo(f) {
 function hordeEnd() {
   const H = G.horde, best = Math.max(STATS.hordeBest || 0, H.wave), record = H.wave > (STATS.hordeBest || 0);
   STATS.hordeBest = best; checkAchv(); saveStats();
+  const online = G.cfg.mode === 'host';
+  if (online) NET.broadcast({ t:'hend', wave:H.wave, score:H.score, kills:H.kills });
   endOverlay('☠️ Fin de la Survie', 'Vague atteinte : ' + H.wave + ' · Score : ' + H.score + ' · K.O. : ' + H.kills + (record ? ' — NOUVEAU RECORD !' : ' · Record : vague ' + best),
-    btn('Rejouer', () => launchMatch(G.cfg), 'big'), btn('Menu principal', showMenu));
+    btn('Rejouer', () => launchMatch(G.cfg), 'big'), ...(online ? [btn('Retour au salon', () => { NET.broadcast({ t:'lobbyback' }); lobbySend(); showSelect(); })] : []), btn('Menu principal', showMenu));
 }
 
 // ================================================================ ARCADE ENRICHIE : parcours, pièces, boutique
@@ -3951,7 +3968,7 @@ const onlineCount = () => NET.conns.length + 1;
 function lobbySend() {
   if (NET.role !== 'host' || !S) return;
   const sl = S.slots.map(s => ({ k:s.kind === 'human' ? 'remote' : s.kind, c:s.char < 0 ? -1 : refOf(s.char), s:!!s.shiny, l:s.lvl || 5, tm:s.team || 0 }));
-  for (const c of NET.conns) NET.sendTo(c, { t:'lobby', you:c.slot, sl, stage:S.stage, stocks:S.stocks, tms:!!S.teams, ff:!!S.ff });
+  for (const c of NET.conns) NET.sendTo(c, { t:'lobby', you:c.slot, sl, stage:S.stage, stocks:S.stocks, tms:!!S.teams, ff:!!S.ff, hz:!!S.horde, df:S.diff });
 }
 async function netHostFlow() {
   show(false, h('div', { class:'title sm' }, 'Création du salon…'));
@@ -4029,7 +4046,7 @@ function guestOnData(m) {
   if (m.t === 'lobby') {
     if (!S || S.mode !== 'guest') S = newSelect('guest');
     const mine = S.slots[m.you], keep = mine && mine.kind === 'human' && mine.char >= 0 ? { char:mine.char, shiny:mine.shiny } : null;
-    S.you = m.you; S.stage = m.stage; S.stocks = m.stocks; S.active = m.you; S.teams = !!m.tms; S.ff = !!m.ff;
+    S.you = m.you; S.stage = m.stage; S.stocks = m.stocks; S.active = m.you; S.teams = !!m.tms; S.ff = !!m.ff; S.horde = !!m.hz; S.diff = m.df || 'normal';
     S.slots = m.sl.map((o, i) => {
       const ch = (typeof o.c === 'number' && o.c < 0) ? -1 : idxOf(o.c);
       if (i === m.you) return { kind:'human', char:keep ? keep.char : ch, shiny:keep ? keep.shiny : !!o.s, lvl:5, team:o.tm || 0 };
@@ -4043,6 +4060,9 @@ function guestOnData(m) {
   else if (m.t === 'end') {
     G.scene = 'over';
     const w = G.fighters[m.w]; G.winTeam = m.wt === undefined ? -1 : m.wt; endOverlay(winnerTitle(w), 'En attente de l\'hôte pour la revanche…', btn('Quitter', showMenu));
+  } else if (m.t === 'hend') {
+    G.scene = 'over'; const rec = m.wave > (STATS.hordeBest || 0); STATS.hordeBest = Math.max(STATS.hordeBest || 0, m.wave); checkAchv(); saveStats();
+    endOverlay('☠️ Fin de la Survie', 'Vague atteinte : ' + m.wave + ' · Score : ' + m.score + ' · K.O. : ' + m.kills + (rec ? ' — NOUVEAU RECORD !' : '') + ' · En attente de l\'hôte pour rejouer…', btn('Quitter', showMenu));
   } else if (m.t === 'bracket') showBracketRO(m.d);
   else if (m.t === 'lobbyback') { G.scene = 'menu'; showSelect(); }
   else if (m.t === 'pong') G.ping = Math.round(performance.now() - m.ts);
@@ -4051,8 +4071,8 @@ async function guestStart(m) {
   show(false, h('div', { class:'title sm' }, 'Chargement des sprites…')); G.scene = 'loading';
   const ci = m.chars.map(idxOf), sh = m.sh || [];
   const sps = await loadSpritesFast(ci.map((c, i) => ({ ch:CHARS[c], shiny:!!sh[i] })), 7000);
-  const fighters = ci.map((c, i) => ({ team:m.tm ? m.tm[i] : 0, char:c, shiny:!!sh[i], kind:i === m.you ? 'human' : (m.kinds[i] === 'c' ? 'cpu' : 'remote'), lvl:(m.lv && m.lv[i]) || 5, slot:i }));
-  setupMatch({ fighters, stocks:m.stocks, mode:'guest', teams:!!m.tm, ff:!!m.ff }, m.stage, sps);
+  const fighters = ci.map((c, i) => ({ team:m.tm ? m.tm[i] : 0, char:c, shiny:!!sh[i], kind:i === m.you ? 'human' : (m.kinds[i] === 'c' ? 'cpu' : 'remote'), lvl:(m.lv && m.lv[i]) || 5, slot:i, hidden:!!(m.hd && m.hd[i]) }));
+  setupMatch({ fighters, stocks:m.stocks, mode:'guest', teams:!!m.tm, ff:!!m.ff, horde:!!m.hz, diff:m.df }, m.stage, sps);
   G.net = 'guest'; G.me = m.you; NET.send({ t:'ready' });
 }
 
@@ -4066,7 +4086,7 @@ function makeSnap() {
     i:G.items.map(it => [Math.round(it.x), Math.round(it.y), ITEM_KEYS.indexOf(it.type), r(it.life, 1)]),
     z:G.hazards.map(h => [HZK.indexOf(h.kind), Math.round(h.x), Math.round(h.y), Math.round(h.w), Math.round(h.h), h.ring ? Math.round(h.r0 + (h.r1 - h.r0) * Math.min(1, h.t / h.life)) : 0, r(h.t, 2), r(h.life, 2), r(Math.max(0, h.delay), 2), h.color, h.face || 1, r(h.age, 2)]),
     b:G.ball ? [Math.round(G.ball.x), Math.round(G.ball.y), G.ball.hp, r(G.ball.flash, 2)] : 0,
-    v:[G.env.lavaY === null ? null : Math.round(G.env.lavaY), G.env.wind || 0], e:[], tm:r(G.time, 2), cd:r(G.cd, 2) };
+    v:[G.env.lavaY === null ? null : Math.round(G.env.lavaY), G.env.wind || 0], hd:G.horde ? [G.horde.wave, G.horde.score, G.horde.kills, G.horde.state === 'prep' ? 1 : 0, Math.ceil(G.horde.t)] : 0, e:[], tm:r(G.time, 2), cd:r(G.cd, 2) };
 }
 function sendSnap() {
   const snap = makeSnap(); snap.e = netEvents; netEvents = [];
@@ -4088,9 +4108,10 @@ function applySnap(m) {
   G.ball = m.b ? { x:m.b[0], y:m.b[1], hp:m.b[2], hpMax:5, flash:m.b[3] } : null;
   G.items = (m.i || []).map(a => ({ x:a[0], y:a[1], type:ITEM_KEYS[a[2]] || 'heal', life:a[3], landed:true }));
   for (const e of m.e) {
-    if (e[0] === 'sp') fxSparks(e[1], e[2], e[3], e[4], e[5]); else if (e[0] === 'sf') sfx(e[1]); else if (e[0] === 'sk') G.shake = Math.max(G.shake, e[1]); else if (e[0] === 'tx') fxText(e[1], e[2], e[3], e[4]); else if (e[0] === 'dk') G.darkT = e[1]; else if (e[0] === 'bn') G.banner = { t:2.6, text:e[1], sub:e[2] || '' }; else if (e[0] === 'ev') { const f = G.fighters[e[1]]; if (f) { const old = f.ch.name; swapChar(f, e[2]); if (e[3] !== 0 && f.ch.name !== old) { G.hitstop = 0; G.evo = { t:.85, max:.85, idx:e[1], from:old, to:f.ch.name }; sfx('evo'); } } } else if (e[0] === 'ci') { G.cine = { t:.9, max:.9, name:e[1], color:e[2], idx:e[3], who:e[4] }; sfx('ult'); }
+    if (e[0] === 'sp') fxSparks(e[1], e[2], e[3], e[4], e[5]); else if (e[0] === 'sf') sfx(e[1]); else if (e[0] === 'sk') G.shake = Math.max(G.shake, e[1]); else if (e[0] === 'tx') fxText(e[1], e[2], e[3], e[4]); else if (e[0] === 'dk') G.darkT = e[1]; else if (e[0] === 'wv') { const f = G.fighters[e[1]]; if (f) { if (e[4]) { f.hidden = true; f.stocks = 0; f.state = 'dead'; } else { f.shiny = !!e[3]; f.hidden = false; f.team = 1; f.giant = e[5] ? 1e9 : 0; swapChar(f, idxOf(e[2])); } } } else if (e[0] === 'bn') G.banner = { t:2.6, text:e[1], sub:e[2] || '' }; else if (e[0] === 'ev') { const f = G.fighters[e[1]]; if (f) { const old = f.ch.name; swapChar(f, e[2]); if (e[3] !== 0 && f.ch.name !== old) { G.hitstop = 0; G.evo = { t:.85, max:.85, idx:e[1], from:old, to:f.ch.name }; sfx('evo'); } } } else if (e[0] === 'ci') { G.cine = { t:.9, max:.9, name:e[1], color:e[2], idx:e[3], who:e[4] }; sfx('ult'); }
   }
   if (m.v) { G.env.lavaY = m.v[0]; G.env.wind = m.v[1]; }
+  if (m.hd && G.horde) Object.assign(G.horde, { wave:m.hd[0], score:m.hd[1], kills:m.hd[2], state:m.hd[3] ? 'prep' : 'fight', t:m.hd[4] });
   G.time = m.tm;
   if (G.cd > 0 && m.cd <= 0) G.go = .7;
   G.cd = m.cd;
@@ -4129,7 +4150,7 @@ async function launchMatch(cfg) {
     for (const c of NET.conns) c.ready = false;
     const kinds = cfg.fighters.map(f => f.kind === 'cpu' ? 'c' : 'r'), lv = cfg.fighters.map(f => f.lvl || 5);
     for (const c of NET.conns) {
-      NET.sendTo(c, { t:'start', tm:cfg.teams ? cfg.fighters.map(f => f.team || 0) : null, ff:!!cfg.ff, you:cfg.fighters.findIndex(f => f.slot === c.slot), chars:cfg.fighters.map(f => refOf(f.char)), sh:cfg.fighters.map(f => !!f.shiny), kinds, lv, stage:si, stocks:cfg.stocks });
+      NET.sendTo(c, { t:'start', hz:cfg.horde ? 1 : 0, df:cfg.diff || 'normal', hd:cfg.fighters.map(f => f.hidden ? 1 : 0), tm:cfg.teams ? cfg.fighters.map(f => f.team || 0) : null, ff:!!cfg.ff, you:cfg.fighters.findIndex(f => f.slot === c.slot), chars:cfg.fighters.map(f => refOf(f.char)), sh:cfg.fighters.map(f => !!f.shiny), kinds, lv, stage:si, stocks:cfg.stocks });
     }
     show(false, h('div', { class:'title sm' }, 'En attente des joueurs…'), h('div', { class:'sub' }, NET.conns.length + ' invité(s) connecté(s)'));
     await new Promise(res => { const t0 = Date.now(), iv = setInterval(() => { if (NET.conns.every(c => c.ready) || Date.now() - t0 > 20000) { clearInterval(iv); res(); } }, 50); });

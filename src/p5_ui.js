@@ -27,7 +27,8 @@ function showMenu() {
     h('div', { class:'sub' }, 'Fan game non officiel de combat de plateforme · 68 familles (164 formes) · 12 grands décors · 18 objets · atelier de fusion'),
     h('div', { class:'col menucol' },
       btn('🏆 Arcade — parcours, boutique, 8 combats', () => showSelect('arcade'), 'big'),
-      btn('🧟 Survie — vagues infinies', () => showSelect('horde'), 'big'),
+      btn('🧟 Survie solo / à deux (local)', () => showSelect('horde'), 'big'),
+      btn('🧟 Survie en ligne (coopération)', () => { window.__presetHorde = true; netHostFlow(); }, 'big'),
       btn('🥇 Tournoi (4, 8 ou 16)', () => showSelect('tour'), 'big'),
       btn('📅 Défi du jour', () => showDaily(), 'big'),
       btn('🎮 Versus local (2 à 4 joueurs, équipes)', () => showSelect('versus'), 'big'),
@@ -178,7 +179,7 @@ function newSelect(mode) {
   else if (mode === 'versus') base.slots = [{ kind:'human', char:PK, shiny:false, team:0 }, { kind:'cpu', lvl:SET.game.cpu, char:CHAR_BY_ID['0006'], shiny:false, team:1 }, { kind:'off', lvl:SET.game.cpu, char:CHAR_BY_ID['0448'], shiny:false, team:0 }, { kind:'off', lvl:SET.game.cpu, char:CHAR_BY_ID['0094'], shiny:false, team:1 }];
   else if (mode === 'horde') base.slots = [{ kind:'human', char:PK, shiny:false, team:0 }, { kind:'off', char:CHAR_BY_ID['0448'], shiny:false, team:0 }];
   else if (mode === 'tour') { base.slots = [{ kind:'human', char:PK, shiny:false, team:0 }, { kind:'cpu', lvl:SET.game.cpu, char:CHAR_BY_ID['0006'], shiny:false, team:0 }, { kind:'off', lvl:SET.game.cpu, char:CHAR_BY_ID['0448'], shiny:false, team:0 }, { kind:'off', lvl:SET.game.cpu, char:CHAR_BY_ID['0094'], shiny:false, team:0 }]; base.tsize = 8; base.stocks = 2; }
-  else if (mode === 'host') { base.slots = [{ kind:'human', char:PK, shiny:false }]; for (let i = 1; i < 8; i++) base.slots.push({ kind:'off', char:randomForm(), shiny:false, lvl:SET.game.cpu, team:i % 2 }); }
+  else if (mode === 'host') { base.horde = !!window.__presetHorde; window.__presetHorde = false; base.slots = [{ kind:'human', char:PK, shiny:false }]; for (let i = 1; i < 8; i++) base.slots.push({ kind:'off', char:randomForm(), shiny:false, lvl:SET.game.cpu, team:i % 2 }); }
   else { base.slots = []; for (let i = 0; i < 8; i++) base.slots.push({ kind:'off', char:-1, shiny:false, lvl:5 }); base.you = -1; }
   if (mode === 'guest') base.active = 0;
   return base;
@@ -188,7 +189,7 @@ function editable(i) { if (S.mode === 'guest') return i === S.you; return S.slot
 function showSelect(mode) {
   if (mode) { S = newSelect(mode); G.scene = 'menu'; }
   const m = S.mode;
-  const titles = { horde:'Survie — vagues infinies (1 ou 2 joueurs en coopération)', tour:'Tournoi — choisissez les participants', arcade:'Arcade — choisissez votre combattant', versus:'Versus local', host:'En ligne — vous êtes l\'hôte (P1)', guest:'En ligne — vous êtes l\'invité (P2)' };
+  const titles = { horde:'Survie — solo ou à deux en local (pour jouer en ligne : Héberger un salon)', tour:'Tournoi — choisissez les participants', arcade:'Arcade — choisissez votre combattant', versus:'Versus local', host:'En ligne — vous êtes l\'hôte (P1)', guest:'En ligne — vous êtes l\'invité (P2)' };
   const roster = h('div', { class:'grid' });
   const norm = t => String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
   const fillGrid = () => {
@@ -238,21 +239,22 @@ function showSelect(mode) {
   const stockSel = h('select', { onchange() { S.stocks = parseInt(this.value, 10); if (S.mode === 'host') lobbySend(); } },
     ...[1, 2, 3, 4, 5].map(n => h('option', Object.assign({ value:n }, S.stocks === n ? { selected:'selected' } : {}), 'Vies : ' + n)));
   if (m === 'guest' || m === 'arcade') stockSel.setAttribute('disabled', 'disabled');
-  const diffSel = (m === 'arcade' || m === 'horde') ? h('select', { onchange() { S.diff = this.value; } },
+  const diffSel = (m === 'arcade' || m === 'horde' || (m === 'host' && S.horde)) ? h('select', { onchange() { S.diff = this.value; if (m === 'host') lobbySend(); } },
     ...[['easy', 'Facile'], ['normal', 'Normal'], ['hard', 'Difficile']].map(([v, n]) => h('option', Object.assign({ value:v }, S.diff === v ? { selected:'selected' } : {}), 'Difficulté : ' + n))) : null;
 
   const itemSel = h('select', { onchange() { SET.game.items = this.value; saveSettings(); } },
     ...[['off', 'Aucun'], ['rare', 'Rares'], ['normal', 'Normaux'], ['frequent', 'Fréquents']].map(([v, n]) => h('option', Object.assign({ value:v }, SET.game.items === v ? { selected:'selected' } : {}), 'Objets : ' + n)));
   if (m === 'guest') itemSel.setAttribute('disabled', 'disabled');
-  const teamSel = (m === 'versus' || m === 'host') ? h('select', { onchange() { S.teams = this.value === '1'; if (m === 'host') lobbySend(); showSelect(); } },
-    h('option', Object.assign({ value:'0' }, !S.teams ? { selected:'selected' } : {}), 'Mode : chacun pour soi'), h('option', Object.assign({ value:'1' }, S.teams ? { selected:'selected' } : {}), 'Mode : équipes (A contre B)')) : null;
+  const teamSel = (m === 'versus' || m === 'host') ? h('select', { onchange() { const v = this.value; S.teams = v === '1'; S.horde = m === 'host' && v === '2'; if (S.horde) S.tour = 0; if (m === 'host') lobbySend(); showSelect(); } },
+    h('option', Object.assign({ value:'0' }, !S.teams && !S.horde ? { selected:'selected' } : {}), 'Mode : chacun pour soi'), h('option', Object.assign({ value:'1' }, S.teams ? { selected:'selected' } : {}), 'Mode : équipes (A contre B)'),
+    ...(m === 'host' ? [h('option', Object.assign({ value:'2' }, S.horde ? { selected:'selected' } : {}), 'Mode : 🧟 Survie coopérative (vagues)')] : [])) : null;
   const ffSel = S.teams && (m === 'versus' || m === 'host') ? h('select', { onchange() { S.ff = this.value === '1'; if (m === 'host') lobbySend(); } },
     h('option', Object.assign({ value:'0' }, !S.ff ? { selected:'selected' } : {}), 'Tirs amis : non'), h('option', Object.assign({ value:'1' }, S.ff ? { selected:'selected' } : {}), 'Tirs amis : oui')) : null;
   const tourSel = m === 'tour' ? h('select', { onchange() { S.tsize = parseInt(this.value, 10); } }, ...[4, 8, 16].map(n => h('option', Object.assign({ value:String(n) }, S.tsize === n ? { selected:'selected' } : {}), 'Tournoi à ' + n))) :
-    m === 'host' ? h('select', { onchange() { S.tour = parseInt(this.value, 10); lobbySend(); showSelect(); } }, ...[0, 4, 8, 16].map(n => h('option', Object.assign({ value:String(n) }, (S.tour || 0) === n ? { selected:'selected' } : {}), n ? 'Tournoi à ' + n : 'Combat normal'))) : null;
+    (m === 'host' && !S.horde) ? h('select', { onchange() { S.tour = parseInt(this.value, 10); lobbySend(); showSelect(); } }, ...[0, 4, 8, 16].map(n => h('option', Object.assign({ value:String(n) }, (S.tour || 0) === n ? { selected:'selected' } : {}), n ? 'Tournoi à ' + n : 'Combat normal'))) : null;
   const pubSel = m === 'host' ? h('select', { onchange() { S.pub = this.value === '1'; if (S.pub) pubStart(); else pubStop(); } }, h('option', Object.assign({ value:'0' }, !S.pub ? { selected:'selected' } : {}), 'Salon privé (par code)'), h('option', Object.assign({ value:'1' }, S.pub ? { selected:'selected' } : {}), 'Salon public (liste)')) : null;
   let startLabel = 'Combattre !', startFn = startFromSelect;
-  if (m === 'host') { const act = S.slots.filter(x => x.kind !== 'off').length; startLabel = act >= 2 ? 'Lancer (' + act + ' combattants)' : 'En attente de joueurs…'; }
+  if (m === 'host') { const act = S.slots.filter(x => x.kind !== 'off').length; startLabel = S.horde ? (act >= 1 ? 'Lancer la Survie (' + act + ' joueur' + (act > 1 ? 's' : '') + ')' : 'En attente de joueurs…') : (act >= 2 ? 'Lancer (' + act + ' combattants)' : 'En attente de joueurs…'); }
   if (m === 'guest') { startLabel = 'En attente de l\'hôte…'; startFn = () => {}; }
   const code = (m === 'host' && NET.code) ? h('div', { class:'code' }, 'Code du salon (' + onlineCount() + '/8 joueurs) : ', h('b', null, NET.code), ' ', h('button', { class:'btn small', onclick() { try { navigator.clipboard.writeText(NET.code); } catch (e) { /* presse-papiers indisponible */ } } }, 'Copier')) : null;
 
@@ -260,7 +262,7 @@ function showSelect(mode) {
   show(false, h('div', { class:'sel' },
     h('div', { class:'sel-head' }, h('div', { class:'title sm' }, titles[m]), code),
     h('div', { class:'sel-slots slots' }, cards),
-    h('div', { class:'sel-opts opts' }, stageSel, (m === 'arcade' || m === 'horde') ? diffSel : stockSel, itemSel, teamSel, ffSel, tourSel, pubSel, (m === 'host' ? btn('📨 Inviter un ami', () => showInvitePicker(), 'small') : null),
+    h('div', { class:'sel-opts opts' }, stageSel, (m === 'arcade' || m === 'horde' || (m === 'host' && S.horde)) ? diffSel : stockSel, itemSel, teamSel, ffSel, tourSel, pubSel, (m === 'host' ? btn('📨 Inviter un ami', () => showInvitePicker(), 'small') : null),
       btn('⚙️ Réglages', () => showSettings('keys', () => showSelect()), 'small'), btn('🧬 Fusion', () => showFusion(() => showSelect()), 'small')),
     h('div', { class:'sel-search' }, search, h('div', { class:'hint' }, 'Touchez un Pokémon : évolution et chromatique ✨ · 🎲 = hasard')),
     roster,
@@ -297,6 +299,14 @@ function startFromSelect() {
     launchMatch({ fighters:fs, stage:S.stage, stocks:S.stocks, mode:'versus', teams:S.teams, ff:S.ff });
     return;
   }
+  if (m === 'host' && S.horde) {
+    const fs = [];
+    S.slots.forEach((sl, i) => { if (sl.kind === 'off' || sl.kind === 'cpu') return; fs.push({ char:sl.char >= 0 ? sl.char : rc(), shiny:!!sl.shiny, team:0, kind:i === 0 ? 'human' : 'remote', lvl:5, slot:i, conn:(NET.conns.find(c => c.slot === i) || {}).conn ? NET.conns.find(c => c.slot === i) : null }); });
+    if (!fs.length) return;
+    const E = Math.max(2, Math.min(4 + (fs.length > 2 ? 1 : 0), 8 - fs.length));
+    for (let j = 0; j < E; j++) fs.push({ char:CHAR_BY_ID['0025'], kind:'cpu', lvl:3, slot:9, team:1, hidden:true });
+    launchMatch({ fighters:fs, stage:S.stage, stocks:3, mode:'host', horde:true, teams:true, ff:false, diff:S.diff }); return;
+  }
   if (m === 'host' && S.tour) {
     const parts = []; S.slots.forEach((sl, i) => { if (sl.kind !== 'off') { const cn = NET.conns.find(c => c.slot === i); parts.push({ name:i === 0 ? 'Hôte' : sl.kind === 'remote' ? 'Joueur ' + (i + 1) : 'CPU', kind:i === 0 ? 'human' : (sl.kind === 'remote' ? 'remote' : 'cpu'), slot:i, char:sl.char >= 0 ? sl.char : rc(), shiny:!!sl.shiny, lvl:sl.lvl || 5, conn:cn || null }); } });
     tourStart(parts, S.tour, S.stage, S.stocks, true); return;
@@ -321,7 +331,7 @@ function onMatchEnd() {
   statMatchEnd();
   if (cfg.tour) { tourMatchDone(); return; }
   if (cfg.mode === 'daily') { dailyEnd(); return; }
-  if (cfg.mode === 'horde') { hordeEnd(); return; }
+  if (cfg.horde) { hordeEnd(); return; }
   if (cfg.mode === 'versus') {
     endOverlay(winnerTitle(w), null, btn('Revanche', () => launchMatch(cfg), 'big'), btn('Choix des combattants', () => showSelect()), btn('Menu principal', showMenu));
   } else if (cfg.mode === 'host') {
